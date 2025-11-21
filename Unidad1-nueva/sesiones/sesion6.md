@@ -1,15 +1,15 @@
-# Sesión 6: Control de Flujo en Assembly y C Bare Metal
+# Sesión 6: Control de Flujo y Funciones en Assembly
 
 **Duración**: 2 horas  
-**Modalidad**: Presencial con transición Assembly-C
+**Modalidad**: Presencial con práctica intensiva de Assembly
 
 ---
 
 ## Objetivos Específicos
 
-1. **Implementar** estructuras de control (if, while, for) en Assembly ARM
-2. **Integrar** código Assembly con código C bare metal
-3. **Comprender** el startup code y el proceso de inicialización del microcontrolador
+1. **Implementar** estructuras de control complejas (if, while, for) en Assembly ARM
+2. **Desarrollar** funciones con paso de parámetros y manejo de stack
+3. **Aplicar** control de flujo en problemas prácticos de programación
 
 ---
 
@@ -147,226 +147,187 @@ do_inicio:
     ; Continuar...
 ```
 
-### 3. Introducción a C Bare Metal (25 minutos)
+### 3. Funciones en Assembly (30 minutos)
 
-#### Estructura Mínima de un Proyecto
+#### Convención de Llamadas ARM (AAPCS)
 
-```
-proyecto/
-├── startup_stm32f407.s     # Código de inicio
-├── linker_script.ld        # Script de enlazado
-├── main.c                  # Código principal en C
-└── Makefile                # Compilación
-```
+**Registros para parámetros**:
+- R0-R3: Primeros 4 parámetros
+- Stack: Parámetros adicionales
+- R0: Valor de retorno
+- LR (R14): Dirección de retorno
 
-#### Startup Code (startup_stm32f407.s)
-
-**Propósito**: Inicializar el sistema antes de ejecutar main()
+#### Función Simple
 
 ```asm
-.syntax unified
-.cpu cortex-m4
-.thumb
-
-.global Reset_Handler
-
-.section .isr_vector
-    .word _estack           ; Stack pointer inicial
-    .word Reset_Handler     ; Reset handler
-    ; ... más vectores de interrupción
-
-.section .text
-Reset_Handler:
-    ; 1. Copiar .data de Flash a RAM
-    LDR R0, =_sdata
-    LDR R1, =_edata
-    LDR R2, =_sidata
-copy_data:
-    CMP R0, R1
-    BGE init_bss
-    LDR R3, [R2], #4
-    STR R3, [R0], #4
-    B copy_data
-    
-    ; 2. Inicializar .bss a cero
-init_bss:
-    LDR R0, =_sbss
-    LDR R1, =_ebss
-    MOV R2, #0
-zero_bss:
-    CMP R0, R1
-    BGE call_main
-    STR R2, [R0], #4
-    B zero_bss
-    
-    ; 3. Llamar a main()
-call_main:
-    BL main
-    
-    ; 4. Si main retorna, bucle infinito
-    B .
+; int suma(int a, int b)
+; Parámetros: R0 = a, R1 = b
+; Retorno: R0 = a + b
+.global suma
+suma:
+    ADD R0, R0, R1      ; R0 = R0 + R1
+    BX LR               ; Retornar
 ```
 
-#### Linker Script (linker_script.ld)
-
-**Propósito**: Definir cómo se organiza el código en memoria
-
-```ld
-MEMORY
-{
-    FLASH (rx) : ORIGIN = 0x08000000, LENGTH = 512K
-    RAM (rwx)  : ORIGIN = 0x20000000, LENGTH = 128K
-}
-
-SECTIONS
-{
-    .isr_vector : {
-        . = ALIGN(4);
-        KEEP(*(.isr_vector))
-        . = ALIGN(4);
-    } > FLASH
-
-    .text : {
-        . = ALIGN(4);
-        *(.text*)
-        . = ALIGN(4);
-    } > FLASH
-
-    .data : {
-        . = ALIGN(4);
-        _sdata = .;
-        *(.data*)
-        _edata = .;
-    } > RAM AT> FLASH
-
-    .bss : {
-        . = ALIGN(4);
-        _sbss = .;
-        *(.bss*)
-        *(COMMON)
-        _ebss = .;
-    } > RAM
-}
-```
-
-#### main.c Básico
-
-```c
-#include <stdint.h>
-
-// Dirección base de GPIOA
-#define GPIOA_BASE  0x40020000
-#define RCC_BASE    0x40023800
-
-// Estructura para GPIO
-typedef struct {
-    volatile uint32_t MODER;
-    volatile uint32_t OTYPER;
-    volatile uint32_t OSPEEDR;
-    volatile uint32_t PUPDR;
-    volatile uint32_t IDR;
-    volatile uint32_t ODR;
-    volatile uint32_t BSRR;
-    volatile uint32_t LCKR;
-    volatile uint32_t AFR[2];
-} GPIO_TypeDef;
-
-// Puntero a estructura GPIOA
-#define GPIOA ((GPIO_TypeDef*)GPIOA_BASE)
-
-int main(void)
-{
-    // Habilitar clock GPIOA (RCC_AHB1ENR bit 0)
-    *(volatile uint32_t*)(RCC_BASE + 0x30) |= (1 << 0);
-    
-    // Configurar PA6 como salida
-    GPIOA->MODER &= ~(0x3 << 12);  // Limpiar bits 12-13
-    GPIOA->MODER |= (0x1 << 12);   // Establecer a 01 (salida)
-    
-    // Bucle infinito con toggle
-    while(1) {
-        GPIOA->ODR ^= (1 << 6);    // Toggle PA6
-        
-        // Delay simple (busy-wait)
-        for(volatile int i=0; i<1000000; i++);
-    }
-    
-    return 0;
-}
-```
-
-### 4. Interoperabilidad Assembly-C (10 minutos)
-
-#### Llamar Assembly desde C
-
-**delay.s**:
+**Uso**:
 ```asm
-.syntax unified
-.thumb
+    MOV R0, #5          ; Primer parámetro
+    MOV R1, #3          ; Segundo parámetro
+    BL suma             ; Llamar función
+    ; R0 contiene 8
+```
 
-.global delay_cycles
+#### Función con Variables Locales (Uso de Stack)
 
-; void delay_cycles(uint32_t cycles)
-; R0 contiene número de ciclos
-delay_cycles:
-    SUBS R0, R0, #1
-    BNE delay_cycles
+```asm
+; int factorial(int n)
+; Calcula n!
+.global factorial
+factorial:
+    PUSH {R4, LR}       ; Guardar registros
+    
+    CMP R0, #1          ; if (n <= 1)
+    BLE caso_base
+    
+    ; n > 1: guardar n y llamar recursivamente
+    MOV R4, R0          ; Guardar n en R4
+    SUB R0, R0, #1      ; n - 1
+    BL factorial        ; factorial(n-1)
+    MUL R0, R4, R0      ; n * factorial(n-1)
+    B fin_factorial
+    
+caso_base:
+    MOV R0, #1          ; retornar 1
+    
+fin_factorial:
+    POP {R4, PC}        ; Restaurar y retornar
+```
+
+#### Función con Múltiples Parámetros
+
+```asm
+; void swap(int *a, int *b)
+; Intercambia dos valores en memoria
+.global swap
+swap:
+    LDR R2, [R0]        ; R2 = *a
+    LDR R3, [R1]        ; R3 = *b
+    STR R3, [R0]        ; *a = R3 (valor de b)
+    STR R2, [R1]        ; *b = R2 (valor de a)
     BX LR
 ```
 
-**main.c**:
-```c
-extern void delay_cycles(uint32_t cycles);
+### 4. Manipulación Avanzada de GPIO en Assembly (25 minutos)
 
-int main(void)
-{
-    while(1) {
-        // Toggle LED
-        GPIOA->ODR ^= (1 << 6);
-        
-        // Llamar función Assembly
-        delay_cycles(1000000);
-    }
-}
-```
+#### Configuración Completa de un Pin
 
-#### Llamar C desde Assembly
-
-**main.s**:
 ```asm
+; Configurar PA6 como salida con velocidad media
 .syntax unified
 .thumb
 
-.extern configurar_led    ; Función definida en C
+; Direcciones base
+.equ RCC_AHB1ENR, 0x40023830
+.equ GPIOA_BASE,  0x40020000
 
-.global main
-main:
-    BL configurar_led     ; Llamar función C
+.global config_pa6
+config_pa6:
+    PUSH {R4, LR}
     
-bucle:
-    ; ... código ...
-    B bucle
+    ; 1. Habilitar clock GPIOA
+    LDR R0, =RCC_AHB1ENR
+    LDR R1, [R0]
+    ORR R1, R1, #(1 << 0)
+    STR R1, [R0]
+    
+    ; 2. Configurar MODER (bits 12-13 = 01 para salida)
+    LDR R0, =GPIOA_BASE
+    LDR R1, [R0, #0x00]     ; Leer MODER
+    BIC R1, R1, #(0x3 << 12) ; Limpiar bits 12-13
+    ORR R1, R1, #(0x1 << 12) ; Establecer 01
+    STR R1, [R0, #0x00]     ; Escribir MODER
+    
+    ; 3. Configurar OTYPER (push-pull = 0)
+    LDR R1, [R0, #0x04]     ; Leer OTYPER
+    BIC R1, R1, #(1 << 6)   ; Limpiar bit 6
+    STR R1, [R0, #0x04]
+    
+    ; 4. Configurar OSPEEDR (velocidad media = 01)
+    LDR R1, [R0, #0x08]     ; Leer OSPEEDR
+    BIC R1, R1, #(0x3 << 12)
+    ORR R1, R1, #(0x1 << 12)
+    STR R1, [R0, #0x08]
+    
+    ; 5. Configurar PUPDR (sin pull = 00)
+    LDR R1, [R0, #0x0C]
+    BIC R1, R1, #(0x3 << 12)
+    STR R1, [R0, #0x0C]
+    
+    POP {R4, PC}
+
+; Función para toggle de LED
+.global led_toggle
+led_toggle:
+    LDR R0, =GPIOA_BASE
+    LDR R1, [R0, #0x14]     ; Leer ODR
+    EOR R1, R1, #(1 << 6)   ; Toggle bit 6
+    STR R1, [R0, #0x14]     ; Escribir ODR
+    BX LR
+
+; Función para encender LED
+.global led_on
+led_on:
+    LDR R0, =GPIOA_BASE
+    MOV R1, #(1 << 6)
+    STR R1, [R0, #0x18]     ; BSRR set
+    BX LR
+
+; Función para apagar LED
+.global led_off
+led_off:
+    LDR R0, =GPIOA_BASE
+    MOV R1, #(1 << 22)      ; bit 6 + 16 = reset
+    STR R1, [R0, #0x18]     ; BSRR reset
+    BX LR
 ```
 
-**led.c**:
-```c
-void configurar_led(void)
-{
-    // Configuración en C
-    *(volatile uint32_t*)0x40023830 |= (1 << 0);  // RCC
-    // ...
-}
+#### Delay en Assembly
+
+```asm
+; void delay_ms(uint32_t ms)
+; Delay aproximado (asumiendo 16MHz)
+.global delay_ms
+delay_ms:
+    PUSH {R4, LR}
+    MOV R4, R0              ; Guardar ms
+    
+delay_loop:
+    CMP R4, #0
+    BEQ delay_fin
+    
+    ; Inner loop: ~1ms @ 16MHz (ajustar según necesidad)
+    LDR R1, =5333           ; Ciclos para ~1ms
+inner_loop:
+    SUBS R1, R1, #1
+    BNE inner_loop
+    
+    SUBS R4, R4, #1
+    B delay_loop
+    
+delay_fin:
+    POP {R4, PC}
 ```
 
 ---
 
 ## Actividades
 
-### Actividad 1: Implementar Estructuras de Control (30 minutos)
+### Actividad 1: Implementar Estructuras de Control (40 minutos)
 
 **Ejercicio 1**: Sumar números del 1 al 10
 ```
-Resultado esperado: 55
+Resultado esperado en R0: 55
+Implementar usando un bucle for
 ```
 
 **Ejercicio 2**: Encontrar el máximo en un array
@@ -374,6 +335,10 @@ Resultado esperado: 55
 .data
 array: .word 5, 12, 3, 18, 7
 size: .word 5
+max: .word 0
+
+.text
+; Escribir código para encontrar el máximo y guardarlo en 'max'
 ```
 
 **Ejercicio 3**: Implementar if-else anidado
@@ -388,30 +353,53 @@ if (R0 > 50) {
 }
 ```
 
-### Actividad 2: Debug de Código con Error (15 minutos)
+### Actividad 2: Desarrollo de Funciones (30 minutos)
 
-**Código con bug**:
+**Ejercicio 1**: Función potencia
 ```asm
-; Contar de 0 a 10
-    MOV R0, #0
-bucle:
-    ADD R0, R0, #1
-    CMP R0, #10
-    BGT bucle        ; ERROR: debería ser BLE o cambiar condición
-    B fin
-fin:
+; int potencia(int base, int exponente)
+; Calcular base^exponente sin usar recursión
 ```
 
-**Tarea**: Identificar y corregir el error.
+**Ejercicio 2**: Función para copiar array
+```asm
+; void copiar_array(int *origen, int *destino, int n)
+; Copiar n elementos de origen a destino
+```
 
-### Actividad 3: Primer Programa en C Bare Metal (25 minutos)
+### Actividad 3: Programa Completo de Parpadeo (30 minutos)
 
-**Tarea**: Modificar el main.c de ejemplo para:
-1. Configurar dos LEDs (PA6 y PA7)
-2. Parpadear alternadamente
-3. Usar función de delay en C
+**Tarea**: Crear un programa completo en Assembly que:
+1. Configure PA6, PA7, PA8 como salidas
+2. Los haga parpadear en secuencia (uno a la vez)
+3. Use funciones modulares (config_gpio, led_on, led_off, delay)
+4. Incluya comentarios explicativos
 
-**Plantilla proporcionada**, estudiantes completan partes faltantes.
+**Estructura sugerida**:
+```asm
+.syntax unified
+.thumb
+
+.global main
+
+main:
+    BL config_todos_leds
+    
+bucle_principal:
+    ; Encender PA6
+    MOV R0, #6
+    BL led_on
+    LDR R0, =500
+    BL delay_ms
+    
+    ; Apagar PA6
+    MOV R0, #6
+    BL led_off
+    
+    ; ... continuar con PA7 y PA8 ...
+    
+    B bucle_principal
+```
 
 ---
 
@@ -419,40 +407,62 @@ fin:
 
 ### Quiz - Sesión 6
 
-1. ¿Qué diferencia hay entre `B` y `BL`? (2 puntos)
-2. ¿Qué hace la instrucción `CMP R0, #10`? (2 puntos)
-3. ¿Por qué se necesita un startup code? (2 puntos)
-4. ¿Qué es `volatile` en C y por qué se usa con registros de hardware? (2 puntos)
-5. Escribe un bucle while en Assembly que cuente de 10 a 0 (2 puntos)
+1. ¿Qué diferencia hay entre `B` y `BL`? ¿Para qué se usa cada uno? (2 puntos)
+2. ¿Qué hace la instrucción `CMP R0, #10` y cómo afecta los flags? (2 puntos)
+3. ¿Qué registros se usan para pasar parámetros a funciones según AAPCS? (2 puntos)
+4. ¿Por qué es necesario usar PUSH y POP en funciones que llaman otras funciones? (2 puntos)
+5. Escribe un bucle while en Assembly que cuente de 10 a 0 y guarde el resultado en R1 (2 puntos)
 
 ---
 
 ## Evidencias de Aprendizaje
 
-**Entregable**: Programa funcional en C que:
-1. Configure 3 LEDs
+**Entregable**: Programa funcional en Assembly que:
+1. Configure 3 LEDs en pines diferentes
 2. Los encienda en secuencia con delays
-3. Incluya comentarios explicativos
-4. Compile sin errores
+3. Use al menos 3 funciones (config, toggle/on/off, delay)
+4. Incluya comentarios explicativos en cada sección
+5. Compile sin errores con arm-none-eabi-as
 
-**Formato**: Archivos main.c y Makefile  
-**Evaluación**: Funcionalidad + estilo de código
+**Formato**: Archivo .s con código completo  
+**Evaluación**: Funcionalidad (50%) + estructura modular (30%) + comentarios (20%)
+
+---
+
+## Material para Casa
+
+### Lectura Previa a Sesión 7
+- Reference Manual STM32F407: Capítulo GPIO (secciones 8.1-8.4)
+- Concepto de registros de periféricos
+- Mapa de memoria de STM32F407
+
+### Ejercicio Opcional
+Implementar en Assembly una función que:
+- Reciba un array de enteros
+- Ordene el array (bubble sort)
+- Retorne el array ordenado
 
 ---
 
 ## Notas para el Instructor
 
-### Transición Importante
-Esta sesión marca la transición de Assembly puro a C. Enfatizar que:
-- C genera código Assembly
-- Entender Assembly ayuda a escribir mejor C
-- Bare metal significa control total pero más responsabilidad
+### Enfoque de la Sesión
+Esta sesión consolida el conocimiento de Assembly antes de la transición a periféricos. Enfatizar:
+- Importancia de funciones modulares
+- Convenciones de llamada (crucial para debugging)
+- Relación entre código Assembly y manipulación de hardware
 
-### Demo Recomendada
-- Mostrar compilación paso a paso: .c → .o → .elf → .bin
-- Inspeccionar código Assembly generado por gcc (-S flag)
+### Demos Recomendadas
+1. Mostrar ejecución paso a paso de función con stack usando debugger
+2. Demostrar cómo el código modular facilita el debugging
+3. Mostrar diferencia de timing entre delays implementados de diferentes formas
+
+### Errores Comunes
+- Olvidar PUSH/POP de LR en funciones que llaman otras funciones
+- Confundir BX con B (uno usa registro, otro label)
+- No alinear stack correctamente (debe ser múltiplo de 8)
 
 ---
 
-**Próxima sesión**: Drivers GPIO y Timer
-**Preparación**: Leer Reference Manual sobre GPIO y TIM2
+**Próxima sesión**: Configuración Avanzada de GPIO en Assembly  
+**Preparación**: Revisar datasheet de GPIO, especialmente registros MODER, OTYPER, OSPEEDR, PUPDR
