@@ -1,0 +1,53 @@
+# macOS
+.DS_Store
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.bcf
+*.blg
+*-blx.bib
+*.brf
+*.cb
+*.cb2
+*.dvi
+*.fdb_latexmk
+*.fls
+*.fmt
+*.fot
+*.glg
+*.glo
+*.gls
+*.glsdefs
+*.acn
+*.acr
+*.alg
+*.idx
+*.ilg
+*.ind
+*.ist
+*.lof
+*.log
+*.lot
+*.lox
+*.nav
+*.out
+*.pdf
+*.pdfsync
+*.ps
+*.run.xml
+*.snm
+*.synctex(busy)
+*.synctex.gz
+*.toc
+*.vrb
+*.xdv
+
+# Minted and Pygments
+_minted*
+*.pyg
+
+# MetaPost / Asymptote / other aux files
+*.dpth
+*.md5
+*.mpx
