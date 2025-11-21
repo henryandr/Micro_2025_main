@@ -6,138 +6,195 @@ Este documento identifica las brechas y oportunidades detectadas durante la Unid
 
 Al finalizar la Unidad 1, los estudiantes deberían tener:
 
-### ✅ Conocimientos Sólidos
+### ✅ Conocimientos Sólidos en Assembly
 
 1. **Arquitectura de Procesadores**: Comprensión clara de Harvard, von Neumann, RISC, CISC
-2. **ARM Cortex M-4**: Conocimiento de componentes internos, registros, mapa de memoria
-3. **Assembly Básico**: Capacidad de escribir programas simples con operaciones aritméticas, lógicas, y control de flujo
-4. **GPIO**: Configuración completa de pines digitales (entrada/salida, pull-up/down, velocidad)
-5. **Timer Básico**: Generación de delays y eventos periódicos
-6. **Interrupciones**: Conceptos fundamentales, NVIC, y manejo básico
+2. **ARM Cortex M-4**: Conocimiento profundo de componentes internos, registros, mapa de memoria, buses
+3. **Assembly Avanzado**: Capacidad de escribir programas complejos con:
+   - Operaciones aritméticas, lógicas, y de bits
+   - Control de flujo (if-else, while, for)
+   - Funciones con manejo de stack y convenciones AAPCS
+   - Manipulación directa de registros de periféricos
+4. **GPIO en Assembly**: Configuración completa de pines usando registros (MODER, OTYPER, OSPEEDR, PUPDR, IDR, ODR, BSRR)
+5. **Interrupciones**: Conceptos fundamentales, NVIC, Vector Table, estructura de handlers
+6. **Lectura de Datasheets**: Habilidad para extraer información de registros y configuraciones
 
 ### ✅ Habilidades Desarrolladas
 
-1. Leer y extraer información de datasheets
-2. Configurar registros de periféricos mediante manipulación de bits
-3. Escribir drivers bare metal simples
-4. Depurar código a bajo nivel
-5. Interoperar código C y Assembly
+1. Leer y extraer información de datasheets y reference manuals
+2. Configurar registros de periféricos mediante manipulación directa de bits en Assembly
+3. Escribir código modular y reutilizable en Assembly
+4. Depurar código a bajo nivel entendiendo cada instrucción
+5. Implementar drivers básicos en Assembly puro
+6. Comprender el flujo de ejecución con interrupciones
 
-## Brechas Identificadas
+## Transición de Unidad 1 a Unidad 2
 
-### 📌 Conocimientos Limitados que Requieren Expansión
+### Cambio de Paradigma: Assembly → C Bare Metal
 
-1. **Comunicación Serial**: Solo se mencionó UART conceptualmente
-   - **Brecha**: No se implementó comunicación UART funcional
-   - **Impacto**: Los estudiantes no pueden comunicarse con PC para debugging avanzado
+**Unidad 1**: Programación exclusiva en Assembly
+- Enfoque en comprensión profunda del hardware
+- Manipulación directa de registros
+- Control total sobre cada instrucción
+- Fundamentos sólidos de arquitectura
 
-2. **ADC (Analog-to-Digital Converter)**: No cubierto
-   - **Brecha**: No pueden leer sensores analógicos
-   - **Impacto**: Limitación para proyectos con sensores comunes
+**Unidad 2**: Programación en C Bare Metal
+- Aplicación de conocimientos de Assembly en C
+- Mayor productividad manteniendo control sobre hardware
+- Desarrollo de drivers completos y reutilizables
+- Proyectos más complejos e integradores
 
-3. **PWM (Pulse Width Modulation)**: No cubierto
-   - **Brecha**: No pueden controlar motores o LEDs con intensidad variable
-   - **Impacto**: Limitación para proyectos de control
+### ¿Por Qué Esta Transición?
 
-4. **DMA (Direct Memory Access)**: No mencionado
-   - **Brecha**: Transferencias de datos sin intervención de CPU
-   - **Impacto**: Ineficiencia en transferencias de grandes volúmenes
+1. **Assembly primero** da comprensión profunda de:
+   - Cómo funciona el hardware a bajo nivel
+   - Qué hace realmente cada operación
+   - Cómo se organizan los datos en memoria
+   - El costo real de cada operación
 
-5. **Watchdog Timer**: No cubierto
-   - **Brecha**: No conocen mecanismos de recuperación automática
-   - **Impacto**: Sistemas menos robustos
+2. **C después** permite:
+   - Desarrollo más rápido y mantenible
+   - Abstracciones útiles sin perder control
+   - Proyectos más complejos en menos tiempo
+   - Mejor lectura y documentación del código
+   - Facilita trabajo en equipo
 
-6. **Low Power Modes**: Solo mencionado superficialmente
-   - **Brecha**: No saben optimizar consumo energético
-   - **Impacto**: Limitación para dispositivos con batería
+### Conocimiento Previo Crítico para Unidad 2
 
-7. **RTC (Real-Time Clock)**: No cubierto
-   - **Brecha**: No pueden mantener tiempo real
-   - **Impacto**: Limitación para aplicaciones con registro temporal
+Los estudiantes que completen Unidad 1 con éxito tendrán ventaja significativa en Unidad 2:
+- Entenderán qué genera el compilador de C
+- Sabrán optimizar código crítico
+- Podrán depurar a nivel de Assembly cuando sea necesario
+- Comprenderán el costo de abstracciones en C
 
-### 📌 Habilidades que Necesitan Profundización
+## Brechas Identificadas (para Unidad 2)
 
-1. **Optimización de Código**: Solo ejemplos básicos
-   - **Necesidad**: Técnicas avanzadas de optimización para recursos limitados
+### 📌 Conocimientos Nuevos Requeridos
 
-2. **Debugging Avanzado**: Solo conceptos básicos
-   - **Necesidad**: Uso de SWD, breakpoints, watchpoints, tracepoints
+1. **Lenguaje C para Embebidos**:
+   - **Brecha**: No han programado en C para sistemas embebidos
+   - **Impacto**: Necesitan aprender diferencias entre C estándar y C bare metal
+   - **Solución**: Sesión dedicada a transición Assembly-C
 
-3. **Gestión de Memoria**: Solo conceptos básicos de stack/heap
-   - **Necesidad**: Técnicas avanzadas, fragmentación, memory pools
+2. **Máquinas de Estados Finitos (MEF)**:
+   - **Brecha**: Concepto no cubierto en Unidad 1
+   - **Impacto**: Necesario para diseño de sistemas reactivos
+   - **Solución**: 2-3 sesiones sobre MEF (Moore, Mealy, implementación en C)
 
-4. **Protocolos de Comunicación**: Solo conceptos
-   - **Necesidad**: Implementación completa de I2C, SPI
+3. **Comunicación Serial (UART)**:
+   - **Brecha**: No implementado en Unidad 1
+   - **Impacto**: Necesario para debugging avanzado e interfaz con PC
+   - **Solución**: 1-2 sesiones sobre UART en C
 
-5. **Manejo de Errores**: Limitado
-   - **Necesidad**: Estrategias robustas de detección y recuperación
+4. **Timer Avanzado**:
+   - **Brecha**: Solo conceptos básicos de delays
+   - **Impacto**: Necesitan timing preciso para MEF y control
+   - **Solución**: Configuración completa de TIM2 en C
+
+5. **Interrupciones en C**:
+   - **Brecha**: Solo vieron conceptos en Assembly
+   - **Impacto**: Necesitan implementar handlers en C
+   - **Solución**: Integración de interrupciones con MEF
+
+6. **Estructura de Proyectos C Bare Metal**:
+   - **Brecha**: No han trabajado con startup code, linker scripts, Makefiles
+   - **Impacto**: No pueden crear proyectos desde cero
+   - **Solución**: Sesión sobre toolchain y estructura de proyectos
+
+### 📌 Habilidades que Necesitan Desarrollarse
+
+1. **Abstracción en C**: Crear estructuras de datos y funciones modulares
+2. **Diseño de Drivers**: API clara, separación de capas
+3. **Manejo de Estados**: Implementar MEF en código estructurado
+4. **Debugging en C**: Técnicas diferentes a debugging en Assembly
+5. **Gestión de Proyectos**: Múltiples archivos .c y .h, compilación modular
 
 ## Recomendaciones para Unidad 2
 
-### Tema Central Sugerido
+### Tema Central Propuesto
 
-**"Periféricos Avanzados y Comunicación en Sistemas Embebidos"**
+**"Máquinas de Estados Finitos y Programación en C Bare Metal para Microcontroladores ARM Cortex M-4"**
 
 ### Estructura Sugerida (4 semanas, 8 sesiones)
 
-#### Semana 1: Comunicación Serial
+#### Semana 1: Transición a C y Fundamentos de MEF
 
-**Sesión 1**: UART - Teoría y Configuración
-- Protocolo UART: baud rate, start/stop bits, paridad
-- Configuración de registros USART en STM32
-- Transmisión básica (polling)
+**Sesión 1**: Lenguaje C para Sistemas Embebidos
+- Diferencias entre C estándar y C bare metal
+- Estructura de proyecto: startup code, linker script, Makefile
+- Primer programa en C: blink LED
+- Comparación con Assembly (mostrar código generado)
+- Tipos de datos, punteros a periféricos
+- Palabra clave `volatile` y su importancia
 
-**Sesión 2**: UART - Recepción y Uso Práctico
-- Recepción con polling y con interrupciones
-- Buffers circulares
-- Printf redirection para debugging
+**Sesión 2**: Máquinas de Estados Finitos - Teoría
+- Concepto de MEF y su aplicación en sistemas embebidos
+- Diferencia entre Moore y Mealy
+- Diagramas de estado
+- Tablas de transición
+- Ejemplos prácticos (semáforo, control de acceso, etc.)
+- Ventajas del diseño basado en estados
 
-**Entregable**: Driver UART funcional con printf() redirigido
+**Entregable**: Programa en C que implemente blink LED + diagrama de MEF simple
 
-#### Semana 2: Conversión Analógica y PWM
+#### Semana 2: Implementación de MEF y GPIO en C
 
-**Sesión 3**: ADC - Conversión Analógica Digital
-- Principios de ADC: resolución, tiempo de muestreo, canales
-- Configuración de ADC en STM32
-- Lectura de potenciómetro y sensores analógicos
+**Sesión 3**: Implementación de MEF en C
+- Estructura enum para estados
+- Switch-case vs tabla de transiciones
+- Variables de estado
+- Eventos y transiciones
+- Temporizadores para MEF
+- Ejemplo: MEF para debouncing de botón
 
-**Sesión 4**: PWM - Modulación por Ancho de Pulso
-- Teoría de PWM: duty cycle, frecuencia
-- Configuración de Timer en modo PWM
-- Control de intensidad de LED y motores DC
+**Sesión 4**: Driver GPIO Completo en C
+- Estructura de datos para GPIO
+- Funciones de inicialización y control
+- Header file vs implementation file
+- Macros y constantes
+- Ejemplo: Sistema de LEDs controlado por MEF
 
-**Entregable**: Sistema de control con lectura de sensor (ADC) y actuación (PWM)
+**Entregable**: Driver GPIO en C + programa con MEF para control de LEDs
 
-#### Semana 3: Protocolos de Comunicación
+#### Semana 3: Timers y Multiplexación
 
-**Sesión 5**: I2C - Inter-Integrated Circuit
-- Protocolo I2C: master/slave, addressing, ACK/NACK
-- Configuración de I2C en STM32
-- Lectura de sensor I2C (ejemplo: acelerómetro, EEPROM)
+**Sesión 5**: Configuración de Timer (TIM2) en C
+- Conceptos: prescaler, auto-reload, update event
+- Configuración de registros en C
+- Generación de delays precisos
+- Timer para base de tiempo de MEF
+- Ejemplo: MEF con timing preciso
 
-**Sesión 6**: SPI - Serial Peripheral Interface
-- Protocolo SPI: MOSI, MISO, SCK, SS
-- Configuración de SPI en STM32
-- Comunicación con sensor SPI o display
+**Sesión 6**: Multiplexación y Técnicas Avanzadas
+- Concepto de multiplexación
+- Multiplexación de displays 7 segmentos
+- Multiplexación de teclados matriciales
+- Implementación con MEF
+- Optimización de uso de pines
 
-**Entregable**: Sistema que integra sensores I2C y SPI
+**Entregable**: Sistema con Timer y multiplexación
 
-#### Semana 4: Optimización y Robustez
+#### Semana 4: Interrupciones y Proyecto Integrador
 
-**Sesión 7**: DMA y Optimización
-- Direct Memory Access: configuración y uso
-- Transferencias ADC-DMA, UART-DMA
-- Técnicas de optimización de código
-- Low power modes
+**Sesión 7**: Interrupciones y NVIC en C
+- Configuración de EXTI (interrupciones externas)
+- Implementación de handlers en C
+- Comunicación entre ISR y main
+- Flags y sincronización
+- Debouncing con interrupciones
+- Prioridades y anidación
 
-**Sesión 8**: Proyecto Integrador
-- Sistema completo que integre:
-  - Múltiples periféricos (UART, ADC, PWM, I2C/SPI)
-  - Manejo de interrupciones
-  - Comunicación con PC
-  - Optimización de recursos
+**Sesión 8**: Proyecto Final - Sistema con MEF
+- Integración de todo lo aprendido
+- Proyecto: Semáforo inteligente con botón peatonal
+  - MEF para estados del semáforo
+  - Interrupción para botón peatonal
+  - Timer para tiempos de estados
+  - Multiplexación si se usa display
+- Evaluación sumativa
+- Presentación de proyectos
 
-**Entregable**: Proyecto final integrador con documentación completa
+**Entregable**: Proyecto completo funcional con documentación
 
 ### Objetivos de Aprendizaje Unidad 2
 
