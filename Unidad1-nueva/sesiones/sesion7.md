@@ -1,370 +1,449 @@
-# Sesión 7: Desarrollo de Drivers GPIO y Timer
+# Sesión 7: Configuración Avanzada de GPIO en Assembly
 
 **Duración**: 2 horas  
-**Modalidad**: Presencial con práctica de hardware
+**Modalidad**: Presencial con práctica intensiva de hardware
 
 ---
 
 ## Objetivos Específicos
 
-1. **Desarrollar** driver básico para GPIO con funciones de inicialización y control
-2. **Configurar** Timer básico (TIM2) para generación de delays precisos
-3. **Aplicar** técnicas de lectura de datasheet para configurar periféricos
+1. **Configurar** pines GPIO con todas sus opciones (modo, tipo, velocidad, pull-up/down) en Assembly
+2. **Implementar** "driver" modular en Assembly para control de GPIO
+3. **Aplicar** técnicas de lectura de datasheet para configurar registros de periféricos
 
 ---
 
 ## Contenidos Temáticos
 
-### 1. Configuración Completa de GPIO (40 minutos)
+### 1. Registros de GPIO en STM32F407 (30 minutos)
+
+#### Mapa de Memoria de GPIO
+
+**Direcciones base**:
+```
+GPIOA: 0x40020000
+GPIOB: 0x40020400
+GPIOC: 0x40020800
+GPIOD: 0x40020C00
+GPIOE: 0x40021000
+```
+
+#### Registros de GPIO (Offsets desde base)
+
+| Registro | Offset | Función |
+|----------|--------|---------|
+| MODER    | 0x00   | Modo del pin (input/output/AF/analog) |
+| OTYPER   | 0x04   | Tipo de salida (push-pull/open-drain) |
+| OSPEEDR  | 0x08   | Velocidad de salida |
+| PUPDR    | 0x0C   | Pull-up/Pull-down |
+| IDR      | 0x10   | Input Data Register (lectura) |
+| ODR      | 0x14   | Output Data Register (escritura) |
+| BSRR     | 0x18   | Bit Set/Reset Register (atómico) |
+| LCKR     | 0x1C   | Lock Register |
+| AFRL     | 0x20   | Alternate Function Low (pins 0-7) |
+| AFRH     | 0x24   | Alternate Function High (pins 8-15) |
+
+#### Registro MODER (Mode Register)
+
+**Formato**: 2 bits por pin (32 bits total = 16 pines)
+```
+Bits 31-30: Pin 15
+Bits 29-28: Pin 14
+...
+Bits 1-0:   Pin 0
+```
+
+**Valores**:
+- `00`: Entrada (input)
+- `01`: Salida de propósito general (output)
+- `10`: Función alternativa (AF)
+- `11`: Modo analógico
+
+#### Registro OTYPER (Output Type Register)
+
+**Formato**: 1 bit por pin
+```
+Bit 15: Pin 15
+...
+Bit 0:  Pin 0
+```
+
+**Valores**:
+- `0`: Push-pull (puede generar 0 y 1)
+- `1`: Open-drain (solo puede generar 0, necesita pull-up externo para 1)
+
+#### Registro OSPEEDR (Output Speed Register)
+
+**Formato**: 2 bits por pin
+```
+00: Low speed (2 MHz)
+01: Medium speed (25 MHz)
+10: Fast speed (50 MHz)
+11: High speed (100 MHz)
+```
+
+#### Registro PUPDR (Pull-up/Pull-down Register)
+
+**Formato**: 2 bits por pin
+```
+00: Sin pull-up ni pull-down
+01: Pull-up habilitado
+10: Pull-down habilitado
+11: Reservado
+```
+
+### 2. Configuración Completa en Assembly (45 minutos)
 
 #### Paso 1: Habilitar Clock del Periférico
 
-**Todos los periféricos en STM32 requieren clock habilitado primero**
+**Todos los periféricos requieren clock habilitado**
 
-```c
-// RCC_AHB1ENR - Bit 0 para GPIOA
-#define RCC_AHB1ENR  (*((volatile uint32_t*)0x40023830))
+```asm
+; Habilitar clock de GPIOA
+; RCC_AHB1ENR está en 0x40023830
 
-void gpio_enable_clock(GPIO_TypeDef *port)
-{
-    if (port == GPIOA)
-        RCC_AHB1ENR |= (1 << 0);
-    else if (port == GPIOB)
-        RCC_AHB1ENR |= (1 << 1);
-    // ... otros puertos
-}
+.equ RCC_AHB1ENR, 0x40023830
+
+enable_gpioa_clock:
+    LDR R0, =RCC_AHB1ENR
+    LDR R1, [R0]
+    ORR R1, R1, #(1 << 0)    ; Bit 0 para GPIOA
+    STR R1, [R0]
+    BX LR
 ```
 
-#### Paso 2: Configurar Modo del Pin (MODER)
+#### Función Genérica para Habilitar Clock
 
-**Modos posibles**:
-- 00: Entrada
-- 01: Salida
-- 10: Función alternativa
-- 11: Analógico
+```asm
+; void gpio_clock_enable(uint8_t port_number)
+; R0 = número de puerto (0=A, 1=B, 2=C, etc.)
 
-```c
-void gpio_set_mode(GPIO_TypeDef *port, uint8_t pin, uint8_t mode)
-{
-    port->MODER &= ~(0x3 << (pin * 2));      // Limpiar bits
-    port->MODER |= (mode << (pin * 2));      // Establecer modo
-}
-
-// Uso
-gpio_set_mode(GPIOA, 6, 0x1);  // PA6 como salida
+.global gpio_clock_enable
+gpio_clock_enable:
+    LDR R1, =RCC_AHB1ENR
+    LDR R2, [R1]
+    MOV R3, #1
+    LSL R3, R3, R0           ; Desplazar 1 por port_number posiciones
+    ORR R2, R2, R3
+    STR R2, [R1]
+    BX LR
 ```
 
-#### Paso 3: Configurar Tipo de Salida (OTYPER)
+#### Paso 2: Configurar Modo del Pin
 
-**Tipos**:
-- 0: Push-pull (puede generar HIGH y LOW)
-- 1: Open-drain (solo pull-down, necesita pull-up externo)
+```asm
+; void gpio_set_mode(GPIO_TypeDef *port, uint8_t pin, uint8_t mode)
+; R0 = dirección base del puerto
+; R1 = número de pin (0-15)
+; R2 = modo (0=input, 1=output, 2=AF, 3=analog)
 
-```c
-void gpio_set_output_type(GPIO_TypeDef *port, uint8_t pin, uint8_t type)
-{
-    if (type)
-        port->OTYPER |= (1 << pin);      // Open-drain
-    else
-        port->OTYPER &= ~(1 << pin);     // Push-pull
-}
-```
-
-#### Paso 4: Configurar Velocidad (OSPEEDR)
-
-**Velocidades**:
-- 00: Low speed
-- 01: Medium speed
-- 10: Fast speed
-- 11: High speed
-
-```c
-void gpio_set_speed(GPIO_TypeDef *port, uint8_t pin, uint8_t speed)
-{
-    port->OSPEEDR &= ~(0x3 << (pin * 2));
-    port->OSPEEDR |= (speed << (pin * 2));
-}
-```
-
-#### Paso 5: Configurar Pull-up/Pull-down (PUPDR)
-
-**Opciones**:
-- 00: No pull-up, no pull-down
-- 01: Pull-up
-- 10: Pull-down
-- 11: Reservado
-
-```c
-void gpio_set_pupd(GPIO_TypeDef *port, uint8_t pin, uint8_t pupd)
-{
-    port->PUPDR &= ~(0x3 << (pin * 2));
-    port->PUPDR |= (pupd << (pin * 2));
-}
-```
-
-#### Driver GPIO Completo (gpio_driver.h/c)
-
-**gpio_driver.h**:
-```c
-#ifndef GPIO_DRIVER_H
-#define GPIO_DRIVER_H
-
-#include <stdint.h>
-
-typedef struct {
-    volatile uint32_t MODER;
-    volatile uint32_t OTYPER;
-    volatile uint32_t OSPEEDR;
-    volatile uint32_t PUPDR;
-    volatile uint32_t IDR;
-    volatile uint32_t ODR;
-    volatile uint32_t BSRR;
-    volatile uint32_t LCKR;
-    volatile uint32_t AFR[2];
-} GPIO_TypeDef;
-
-#define GPIOA ((GPIO_TypeDef*)0x40020000)
-#define GPIOB ((GPIO_TypeDef*)0x40020400)
-
-// Funciones públicas
-void GPIO_Init(GPIO_TypeDef *port, uint8_t pin);
-void GPIO_Write(GPIO_TypeDef *port, uint8_t pin, uint8_t value);
-uint8_t GPIO_Read(GPIO_TypeDef *port, uint8_t pin);
-void GPIO_Toggle(GPIO_TypeDef *port, uint8_t pin);
-
-#endif
-```
-
-**gpio_driver.c**:
-```c
-#include "gpio_driver.h"
-
-#define RCC_AHB1ENR  (*((volatile uint32_t*)0x40023830))
-
-void GPIO_Init(GPIO_TypeDef *port, uint8_t pin)
-{
-    // 1. Habilitar clock
-    if (port == GPIOA)
-        RCC_AHB1ENR |= (1 << 0);
+.global gpio_set_mode
+gpio_set_mode:
+    PUSH {R4, R5, LR}
     
-    // 2. Configurar como salida
-    port->MODER &= ~(0x3 << (pin * 2));
-    port->MODER |= (0x1 << (pin * 2));
+    ; Calcular desplazamiento: pin * 2
+    LSL R3, R1, #1           ; R3 = pin * 2
     
-    // 3. Push-pull
-    port->OTYPER &= ~(1 << pin);
+    ; Crear máscara para limpiar: ~(0x3 << (pin*2))
+    MOV R4, #0x3
+    LSL R4, R4, R3           ; R4 = 0x3 << (pin*2)
+    MVN R4, R4               ; R4 = ~(0x3 << (pin*2))
     
-    // 4. Velocidad media
-    port->OSPEEDR &= ~(0x3 << (pin * 2));
-    port->OSPEEDR |= (0x1 << (pin * 2));
+    ; Leer MODER
+    LDR R5, [R0, #0x00]
     
-    // 5. Sin pull-up/down
-    port->PUPDR &= ~(0x3 << (pin * 2));
-}
-
-void GPIO_Write(GPIO_TypeDef *port, uint8_t pin, uint8_t value)
-{
-    if (value)
-        port->BSRR = (1 << pin);         // Set bit
-    else
-        port->BSRR = (1 << (pin + 16));  // Reset bit
-}
-
-uint8_t GPIO_Read(GPIO_TypeDef *port, uint8_t pin)
-{
-    return (port->IDR & (1 << pin)) ? 1 : 0;
-}
-
-void GPIO_Toggle(GPIO_TypeDef *port, uint8_t pin)
-{
-    port->ODR ^= (1 << pin);
-}
+    ; Limpiar bits
+    AND R5, R5, R4
+    
+    ; Establecer nuevo modo
+    LSL R2, R2, R3           ; mode << (pin*2)
+    ORR R5, R5, R2
+    
+    ; Escribir MODER
+    STR R5, [R0, #0x00]
+    
+    POP {R4, R5, PC}
 ```
 
-### 2. Configuración de Timer Básico (TIM2) (40 minutos)
+#### Paso 3: Configurar Tipo de Salida
 
-#### Conceptos de Timer
+```asm
+; void gpio_set_output_type(GPIO_TypeDef *port, uint8_t pin, uint8_t type)
+; R0 = dirección base del puerto
+; R1 = número de pin (0-15)
+; R2 = tipo (0=push-pull, 1=open-drain)
 
-**Timer**: Contador que incrementa con cada pulso de reloj
-
-**Prescaler (PSC)**: Divide la frecuencia de reloj
-```
-Frecuencia_Timer = Frecuencia_Clock / (PSC + 1)
-```
-
-**Auto-Reload Register (ARR)**: Valor máximo del contador
-```
-Periodo = (ARR + 1) / Frecuencia_Timer
-```
-
-#### Ejemplo de Cálculo
-
-**Objetivo**: Generar un evento cada 1 segundo con reloj de 16 MHz
-
-```
-Queremos: 1 segundo
-Reloj: 16,000,000 Hz
-
-Opción 1: PSC = 15999, ARR = 999
-Frecuencia_Timer = 16,000,000 / 16,000 = 1,000 Hz
-Periodo = 1,000 / 1,000 = 1 segundo ✓
-
-Opción 2: PSC = 15, ARR = 999,999
-Frecuencia_Timer = 16,000,000 / 16 = 1,000,000 Hz
-Periodo = 1,000,000 / 1,000,000 = 1 segundo ✓
-```
-
-#### Driver Timer (timer_driver.h/c)
-
-**timer_driver.h**:
-```c
-#ifndef TIMER_DRIVER_H
-#define TIMER_DRIVER_H
-
-#include <stdint.h>
-
-void Timer_Init(uint16_t prescaler, uint32_t period);
-void Timer_Start(void);
-void Timer_Stop(void);
-uint32_t Timer_GetCounter(void);
-void Delay_ms(uint32_t ms);
-
-#endif
-```
-
-**timer_driver.c**:
-```c
-#include "timer_driver.h"
-
-#define RCC_APB1ENR  (*((volatile uint32_t*)0x40023840))
-#define TIM2_BASE    0x40000000
-
-typedef struct {
-    volatile uint32_t CR1;
-    volatile uint32_t CR2;
-    volatile uint32_t SMCR;
-    volatile uint32_t DIER;
-    volatile uint32_t SR;
-    volatile uint32_t EGR;
-    volatile uint32_t CCMR1;
-    volatile uint32_t CCMR2;
-    volatile uint32_t CCER;
-    volatile uint32_t CNT;
-    volatile uint32_t PSC;
-    volatile uint32_t ARR;
-    uint32_t RESERVED;
-    volatile uint32_t CCR[4];
-} TIM_TypeDef;
-
-#define TIM2 ((TIM_TypeDef*)TIM2_BASE)
-
-void Timer_Init(uint16_t prescaler, uint32_t period)
-{
-    // 1. Habilitar clock TIM2
-    RCC_APB1ENR |= (1 << 0);
+.global gpio_set_output_type
+gpio_set_output_type:
+    PUSH {R4, LR}
     
-    // 2. Configurar prescaler
-    TIM2->PSC = prescaler - 1;
+    ; Leer OTYPER
+    LDR R3, [R0, #0x04]
     
-    // 3. Configurar auto-reload
-    TIM2->ARR = period - 1;
+    ; Crear máscara para el pin
+    MOV R4, #1
+    LSL R4, R4, R1           ; R4 = 1 << pin
     
-    // 4. Generar evento de actualización
-    TIM2->EGR |= (1 << 0);
+    CMP R2, #0
+    BEQ set_pushpull
     
-    // 5. Habilitar timer
-    TIM2->CR1 |= (1 << 0);
-}
-
-void Timer_Start(void)
-{
-    TIM2->CR1 |= (1 << 0);  // CEN bit
-}
-
-void Timer_Stop(void)
-{
-    TIM2->CR1 &= ~(1 << 0);
-}
-
-uint32_t Timer_GetCounter(void)
-{
-    return TIM2->CNT;
-}
-
-void Delay_ms(uint32_t ms)
-{
-    // Suponiendo timer configurado para 1kHz (1ms por tick)
-    uint32_t start = TIM2->CNT;
-    while ((TIM2->CNT - start) < ms);
-}
+set_opendrain:
+    ; Establecer bit (open-drain)
+    ORR R3, R3, R4
+    B write_otyper
+    
+set_pushpull:
+    ; Limpiar bit (push-pull)
+    MVN R4, R4
+    AND R3, R3, R4
+    
+write_otyper:
+    STR R3, [R0, #0x04]
+    
+    POP {R4, PC}
 ```
 
-### 3. Integración: LED Parpadeante con Timer (10 minutos)
+#### Paso 4: Configurar Velocidad
 
-```c
-#include "gpio_driver.h"
-#include "timer_driver.h"
+```asm
+; void gpio_set_speed(GPIO_TypeDef *port, uint8_t pin, uint8_t speed)
+; R0 = dirección base del puerto
+; R1 = número de pin (0-15)
+; R2 = velocidad (0=low, 1=medium, 2=fast, 3=high)
 
-int main(void)
-{
-    // Inicializar LED en PA6
-    GPIO_Init(GPIOA, 6);
+.global gpio_set_speed
+gpio_set_speed:
+    PUSH {R4, R5, LR}
     
-    // Inicializar timer para 1ms por tick
-    // PSC = 16000 → 1kHz, ARR = máximo (para cuenta libre)
-    Timer_Init(16000, 0xFFFFFFFF);
+    ; Calcular desplazamiento: pin * 2
+    LSL R3, R1, #1
     
-    while (1)
-    {
-        GPIO_Toggle(GPIOA, 6);
-        Delay_ms(500);  // 500 ms
-    }
+    ; Máscara para limpiar
+    MOV R4, #0x3
+    LSL R4, R4, R3
+    MVN R4, R4
     
-    return 0;
-}
+    ; Leer, modificar, escribir OSPEEDR
+    LDR R5, [R0, #0x08]
+    AND R5, R5, R4
+    LSL R2, R2, R3
+    ORR R5, R5, R2
+    STR R5, [R0, #0x08]
+    
+    POP {R4, R5, PC}
+```
+
+#### Paso 5: Configurar Pull-up/Pull-down
+
+```asm
+; void gpio_set_pupd(GPIO_TypeDef *port, uint8_t pin, uint8_t pupd)
+; R0 = dirección base del puerto
+; R1 = número de pin (0-15)
+; R2 = pupd (0=none, 1=pull-up, 2=pull-down)
+
+.global gpio_set_pupd
+gpio_set_pupd:
+    PUSH {R4, R5, LR}
+    
+    LSL R3, R1, #1
+    
+    MOV R4, #0x3
+    LSL R4, R4, R3
+    MVN R4, R4
+    
+    LDR R5, [R0, #0x0C]
+    AND R5, R5, R4
+    LSL R2, R2, R3
+    ORR R5, R5, R2
+    STR R5, [R0, #0x0C]
+    
+    POP {R4, R5, PC}
+```
+
+### 3. Operaciones de Lectura/Escritura (20 minutos)
+
+#### Escribir en un Pin (usando BSRR)
+
+**BSRR es atómico - no necesita read-modify-write**
+
+```asm
+; void gpio_write(GPIO_TypeDef *port, uint8_t pin, uint8_t value)
+; R0 = dirección base del puerto
+; R1 = número de pin
+; R2 = valor (0 o 1)
+
+.global gpio_write
+gpio_write:
+    CMP R2, #0
+    BEQ write_zero
+    
+write_one:
+    ; Set: bits 0-15 de BSRR
+    MOV R2, #1
+    LSL R2, R2, R1
+    STR R2, [R0, #0x18]      ; BSRR
+    BX LR
+    
+write_zero:
+    ; Reset: bits 16-31 de BSRR
+    MOV R2, #1
+    LSL R2, R2, R1
+    LSL R2, R2, #16          ; Desplazar a bits 16-31
+    STR R2, [R0, #0x18]
+    BX LR
+```
+
+#### Leer un Pin
+
+```asm
+; uint8_t gpio_read(GPIO_TypeDef *port, uint8_t pin)
+; R0 = dirección base del puerto
+; R1 = número de pin
+; Retorno: R0 = 0 o 1
+
+.global gpio_read
+gpio_read:
+    LDR R2, [R0, #0x10]      ; Leer IDR
+    LSR R2, R2, R1           ; Desplazar a derecha
+    AND R0, R2, #1           ; Aislar bit menos significativo
+    BX LR
+```
+
+#### Toggle de un Pin
+
+```asm
+; void gpio_toggle(GPIO_TypeDef *port, uint8_t pin)
+; R0 = dirección base del puerto
+; R1 = número de pin
+
+.global gpio_toggle
+gpio_toggle:
+    PUSH {R4, LR}
+    
+    ; Leer ODR
+    LDR R2, [R0, #0x14]
+    
+    ; XOR con máscara del pin
+    MOV R3, #1
+    LSL R3, R3, R1
+    EOR R2, R2, R3
+    
+    ; Escribir ODR
+    STR R2, [R0, #0x14]
+    
+    POP {R4, PC}
+```
+
+### 4. Driver Completo en Assembly (15 minutos)
+
+#### Inicialización Completa de un Pin
+
+```asm
+; void gpio_init_output(GPIO_TypeDef *port, uint8_t pin)
+; Inicializa pin como salida con configuración estándar:
+; - Modo: Output
+; - Tipo: Push-pull
+; - Velocidad: Medium
+; - PUPD: None
+
+.global gpio_init_output
+gpio_init_output:
+    PUSH {R4, R5, LR}
+    MOV R4, R0               ; Guardar port
+    MOV R5, R1               ; Guardar pin
+    
+    ; 1. Habilitar clock (asumiendo GPIOA=0, GPIOB=1, etc.)
+    ; Simplificado: siempre habilitar GPIOA
+    LDR R0, =0x40023830
+    LDR R1, [R0]
+    ORR R1, R1, #(1 << 0)
+    STR R1, [R0]
+    
+    ; 2. Configurar modo = output (0x1)
+    MOV R0, R4
+    MOV R1, R5
+    MOV R2, #1               ; Output mode
+    BL gpio_set_mode
+    
+    ; 3. Configurar tipo = push-pull (0x0)
+    MOV R0, R4
+    MOV R1, R5
+    MOV R2, #0               ; Push-pull
+    BL gpio_set_output_type
+    
+    ; 4. Configurar velocidad = medium (0x1)
+    MOV R0, R4
+    MOV R1, R5
+    MOV R2, #1               ; Medium speed
+    BL gpio_set_speed
+    
+    ; 5. Configurar PUPD = none (0x0)
+    MOV R0, R4
+    MOV R1, R5
+    MOV R2, #0               ; No pull
+    BL gpio_set_pupd
+    
+    POP {R4, R5, PC}
 ```
 
 ---
 
 ## Actividades
 
-### Actividad 1: Lectura de Datasheet (25 minutos)
+### Actividad 1: Lectura de Datasheet (20 minutos)
 
-**Objetivo**: Extraer información del Reference Manual.
+**Tarea**: En grupos de 2-3, consultar el STM32F407 Reference Manual:
+1. Identificar el offset del registro LCKR
+2. Explicar para qué sirve y cómo se usa
+3. Escribir pseudocódigo para "bloquear" un pin
 
-**Tarea**: En grupos, completar tabla:
+### Actividad 2: Implementar Configuración Completa (40 minutos)
 
-| Registro | Dirección | Bits relevantes | Función |
-|----------|-----------|----------------|---------|
-| RCC_AHB1ENR | | | |
-| GPIOA_MODER | | | |
-| TIM2_CR1 | | | |
-| TIM2_PSC | | | |
+**Ejercicio**: Escribir programa en Assembly que:
+1. Configure PA6 como salida push-pull, velocidad high, sin pull
+2. Configure PA7 como entrada con pull-up
+3. Si PA7 está en LOW, encender PA6
+4. Si PA7 está en HIGH, apagar PA6
 
-**Herramienta**: Reference Manual RM0090
+**Estructura sugerida**:
+```asm
+.syntax unified
+.thumb
 
-### Actividad 2: Implementar Patrón de LEDs (35 minutos)
+.equ GPIOA_BASE, 0x40020000
 
-**Tarea**: Crear secuencia con 3 LEDs:
+.global main
+
+main:
+    ; Configurar PA6
+    LDR R0, =GPIOA_BASE
+    MOV R1, #6
+    BL gpio_init_output
+    
+    ; Configurar PA7
+    ; (implementar)
+    
+bucle_principal:
+    ; Leer PA7
+    ; Si LOW, encender PA6
+    ; Si HIGH, apagar PA6
+    
+    B bucle_principal
 ```
-LED1: ON  - LED2: OFF - LED3: OFF  (500ms)
-LED1: OFF - LED2: ON  - LED3: OFF  (500ms)
-LED1: OFF - LED2: OFF - LED3: ON   (500ms)
-Repetir
-```
 
-**Usar**: Drivers GPIO y Timer creados
+### Actividad 3: Driver Genérico (40 minutos)
 
-### Actividad 3: Debug de Configuración Incorrecta (10 minutos)
+**Tarea**: Crear archivo `gpio_driver.s` con:
+- `gpio_init_output(port, pin)`
+- `gpio_init_input(port, pin, pupd)`
+- `gpio_write(port, pin, value)`
+- `gpio_read(port, pin)`
+- `gpio_toggle(port, pin)`
 
-**Escenario**: LED no enciende. Código proporcionado tiene error intencional.
-
-**Errores posibles**:
-1. Clock no habilitado
-2. Pin configurado como entrada en vez de salida
-3. Registro BSRR usado incorrectamente
-
-**Tarea**: Identificar y corregir.
+**Requisitos**:
+- Comentarios claros en cada función
+- Preservar registros según AAPCS
+- Validación opcional de parámetros
 
 ---
 
@@ -372,45 +451,67 @@ Repetir
 
 ### Quiz - Sesión 7
 
-1. ¿Por qué es necesario habilitar el clock de un periférico? (2 puntos)
-2. ¿Qué hace el registro BSRR y por qué es preferible sobre ODR para cambiar un pin? (2 puntos)
-3. ¿Cómo se calcula el periodo de un timer dado PSC y ARR? (3 puntos)
-4. ¿Qué diferencia hay entre push-pull y open-drain? (2 puntos)
-5. Nombra los 5 registros principales de GPIO (1 punto)
+1. ¿Por qué es necesario habilitar el clock de un periférico antes de usarlo? (2 puntos)
+2. ¿Qué ventaja tiene usar BSRR en lugar de ODR para cambiar un pin? (2 puntos)
+3. ¿Cuándo se debe usar configuración open-drain en lugar de push-pull? (2 puntos)
+4. ¿Qué registro se usa para leer el estado de un pin configurado como entrada? (2 puntos)
+5. Escribe en Assembly la configuración de PB5 como salida push-pull, velocidad low (2 puntos)
 
 ---
 
 ## Evidencias de Aprendizaje
 
-**Entregable**: Driver completo y funcional que:
-1. Configure GPIO con todas las opciones (modo, tipo, velocidad, pull-up/down)
-2. Incluya funciones para leer y escribir pines
-3. Implemente delay preciso con timer
-4. Tenga comentarios explicando cada registro
+**Entregable**: Archivo `gpio_driver.s` completo que:
+1. Implemente todas las funciones especificadas
+2. Funcione correctamente con hardware (demostración en clase)
+3. Incluya comentarios explicativos
+4. Siga convenciones AAPCS
+5. Compile sin errores ni warnings
 
-**Formato**: Archivos .c y .h separados
-**Evaluación**: Funcionalidad (60%) + Documentación (40%)
+**Formato**: Archivo .s con código fuente  
+**Evaluación**: 
+- Funcionalidad correcta: 50%
+- Estructura y organización: 20%
+- Comentarios y documentación: 15%
+- Eficiencia del código: 15%
+
+---
+
+## Material para Casa
+
+### Lectura Previa a Sesión 8
+- Concepto de interrupciones
+- NVIC (Nested Vectored Interrupt Controller)
+- Tipos de interrupciones en Cortex M-4
+- Prioridades de interrupciones
+
+### Ejercicio Opcional
+Implementar función que:
+- Configure 8 LEDs (puerto completo)
+- Muestre un patrón tipo "Knight Rider" (ida y vuelta)
+- Use delays parametrizables
 
 ---
 
 ## Notas para el Instructor
 
-### Hardware Necesario
-- Tarjeta STM32F407
-- LEDs externos y resistencias (si LEDs integrados insuficientes)
-- Osciloscopio o analizador lógico (opcional para verificar timing)
+### Enfoque Pedagógico
+- Énfasis en lectura activa de datasheet
+- Relacionar cada bit con comportamiento observable en hardware
+- Debugging con osciloscopio/analizador lógico si disponible
 
-### Puntos Clave
-- Lectura de datasheet es habilidad crítica
-- Separación de driver de aplicación (buena práctica)
-- Drivers reutilizables para proyectos futuros
+### Demos Importantes
+1. Mostrar diferencia entre push-pull y open-drain con LEDs
+2. Demostrar pull-up/pull-down con botones
+3. Mostrar timing con diferentes velocidades (si posible con osciloscopio)
 
 ### Problemas Comunes
-- Olvidar habilitar clock (falla #1)
-- Calcular mal prescaler/ARR
-- No esperar a que timer inicie después de configuración
+- Olvidar habilitar clock (el periférico no responde)
+- Confundir offset de registros
+- No preservar registros en funciones (violación AAPCS)
+- Usar ODR en lugar de BSRR (race conditions en sistemas más complejos)
 
 ---
 
-**Próxima sesión**: Interrupciones y Evaluación Final
-**Preparación**: Leer sobre NVIC e interrupciones en Cortex-M4
+**Próxima sesión**: Interrupciones Básicas en Assembly  
+**Preparación**: Revisar conceptos de interrupciones y NVIC
